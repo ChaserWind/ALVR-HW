@@ -146,30 +146,38 @@ impl<T: Serialize> StreamSender<T> {
     }
 
     pub async fn send(&mut self, header: &T, payload_buffer: Vec<u8>) -> StrResult {
-        // packet layout:
-        // [ 2B (stream ID) | 4B (packet index) | 4B (packet shard count) | 4B (shard index)]
-        // this escluses length delimited coding, which is handled by the TCP backend
+        // 当前定义的包结构:
+        // [ 2B (流ID，用来识别一次会话中的不同流，stream ID) | 4B (当前发送帧的帧序号，packet index) | 4B (当前帧包含包数量，packet shard count) | 4B (当前包序号，shard index)]
+        // 使用length delimited coding进行封包，在UDP payload开始会额外预留四个字节包含当前payload长度的信息。
+        // To be Done: 不同流对应的流ID：下行编码的视频流（3）上行控制流（0）
+        // 其他每个包公用的包头在这里定义
         const OFFSET: usize = 2 + 4 + 4 + 4;
         let max_shard_data_size = self.max_packet_size - OFFSET;
 
+        // 初始化header_buffer，并且预留header_size的长度，最后序列化header
+        // 所有的数据用rust的bincode包进行序列化，serialized_size返回序列化需要的长度
         let header_size = bincode::serialized_size(header).map_err(err!()).unwrap() as usize;
         self.header_buffer.clear();
         if self.header_buffer.capacity() < header_size {
-            // If the buffer is empty, with this call we request a capacity of "header_size".
             self.header_buffer.reserve(header_size);
         }
         bincode::serialize_into(&mut self.header_buffer, header)
             .map_err(err!())
             .unwrap();
+
+        //计算一帧的包头和payload需要分别需要多少个包传输
         let header_shards = self.header_buffer.chunks(max_shard_data_size);
 
         let payload_shards = payload_buffer.chunks(max_shard_data_size);
 
         let total_shards_count = payload_shards.len() + header_shards.len();
+
+        //需要传输的udp payload总长度：帧包头+payload包头+总包数量*每个包头的长度（2+4+4+4）
         let mut shards_buffer = BytesMut::with_capacity(
             header_size + payload_buffer.len() + total_shards_count * OFFSET,
         );
 
+        //封包并且发送到socket的缓冲区
         for (shard_index, shard) in header_shards.chain(payload_shards).enumerate() {
             shards_buffer.put_u16(self.stream_id);
             shards_buffer.put_u32(self.next_packet_index);
@@ -178,7 +186,7 @@ impl<T: Serialize> StreamSender<T> {
             shards_buffer.put_slice(shard);
             self.send_buffer(shards_buffer.split()).await;
         }
-        
+        //调用flush()函数一次性将缓冲区中的数据包发送出去
         match &self.socket {
             StreamSendSocket::Udp(socket) => {
                 socket.inner.lock().await.flush().await.map_err(err!())?;
@@ -265,7 +273,7 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
                                 buffer.had_packet_loss = true;
                                 buffer.packet_loss_count+=1;
                                 self.next_packet_shards.clear();
-
+                                
                                 //break;
                             }
                         }
