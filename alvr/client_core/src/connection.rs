@@ -78,6 +78,7 @@ fn set_hud_message(message: &str) {
         .push_back(ClientCoreEvent::UpdateHudMessage(message));
 }
 
+// 处理断连恢复的函数
 pub fn connection_lifecycle_loop(
     recommended_view_resolution: UVec2,
     supported_refresh_rates: Vec<f32>,
@@ -90,6 +91,7 @@ pub fn connection_lifecycle_loop(
         check_interrupt!(IS_ALIVE.value());
 
         if IS_RESUMED.value() {
+            // 重连
             if let Err(e) = connection_pipeline(
                 recommended_view_resolution,
                 supported_refresh_rates.clone(),
@@ -106,7 +108,7 @@ pub fn connection_lifecycle_loop(
                 }
             }
         }
-
+        // 断连之后每秒钟进行尝试重连，CONNECTION_RETRY
         thread::sleep(CONNECTION_RETRY_INTERVAL);
     }
 }

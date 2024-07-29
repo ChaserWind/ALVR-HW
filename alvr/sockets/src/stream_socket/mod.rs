@@ -246,11 +246,14 @@ pub struct StreamReceiver<T> {
 
 /// Get next packet reconstructing from shards. It can store at max shards from two packets; if the
 /// reordering entropy is too high, packets will never be successfully reconstructed.
+/// 
+/// 从接收的socket处接收包，直到收到完整的一帧画面为止。如果出现丢包会丢弃当前帧
 impl<T: DeserializeOwned> StreamReceiver<T> {
     pub async fn recv_buffer(&mut self, buffer: &mut ReceiverBuffer<T>) -> StrResult {
         buffer.had_packet_loss = false;
 
         loop {
+            // 尝试接收下一帧
             let current_packet_index = self.next_packet_index;
             self.next_packet_index += 1;
 
@@ -261,6 +264,8 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
             let mut current_packet_shards_count = self.next_packet_shards_count.take();
 
             loop {
+                // 目前hash表中存的包数量是否大于当前帧的包数量，大于的话会进行数据的组装并且返回
+                // Q：目前代码中丢包检测的逻辑不完善，并且不会请求重传
                 if let Some(shards_count) = current_packet_shards_count {
                     if current_packet_shards.len() >= shards_count {
                         buffer.inner.clear();
@@ -273,7 +278,7 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
                                 buffer.had_packet_loss = true;
                                 buffer.packet_loss_count+=1;
                                 self.next_packet_shards.clear();
-                                
+
                                 //break;
                             }
                         }
@@ -326,7 +331,7 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
     pub async fn recv_header_only(&mut self) -> StrResult<T> {
         let mut buffer = ReceiverBuffer::new();
         self.recv_buffer(&mut buffer).await?;
-
+        // 接收并且拼装下一帧的包，反馈一个字符串列表（帧的包头和帧的数据）
         Ok(buffer.get()?.0)
     }
 }
