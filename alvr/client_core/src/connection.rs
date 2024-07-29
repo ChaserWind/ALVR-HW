@@ -120,6 +120,7 @@ fn connection_pipeline(
 ) -> IntResult {
     let runtime = Runtime::new().map_err(to_int_e!())?;
 
+    // 广播，尝试和发送端建立连接，返回发送端socket和IP
     let (mut proto_control_socket, server_ip) = {
         let config = Config::load();
         let announcer_socket = AnnouncerSocket::new(&config.hostname).map_err(to_int_e!())?;
@@ -162,6 +163,8 @@ fn connection_pipeline(
         .input_sample_rate()
         .unwrap();
 
+    // 向发送端发送接收端信息数据包：接收端版本，接收端支持的刷新率，分辨率以及声音采样频率
+    // 调用rust runtime的block_on，阻塞当前线程
     runtime
         .block_on(
             proto_control_socket.send(&ClientConnectionResult::ConnectionAccepted {
@@ -180,6 +183,7 @@ fn connection_pipeline(
         .block_on(proto_control_socket.recv::<StreamConfigPacket>())
         .map_err(to_int_e!())?;
 
+    // 建立数据发送的pipeline，并且阻塞在当前线程
     runtime
         .block_on(stream_pipeline(
             proto_control_socket,
@@ -440,6 +444,7 @@ async fn stream_pipeline(
                     }
                     warn!("Network dropped video packet");
                 }
+                // 每300ms计算一次丢包率，但是这里的包的概念指的是一帧，所以应该是300ms的丢帧率
                 let elapsed = last_time.elapsed();
                 if elapsed >= Duration::from_millis(300) {
                     let mut packet_loss_rate=0.0;
