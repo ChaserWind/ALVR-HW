@@ -144,16 +144,21 @@ impl<T: Serialize> StreamSender<T> {
                 .ok(),
         };
     }
-
+    
+    //将message序列化成包并且发送，message有自己的header（例如帧的发送时间戳等），同时序列化之后，每个包有自己的header（帧序号，添加的路由器字段等）
     pub async fn send(&mut self, header: &T, payload_buffer: Vec<u8>) -> StrResult {
         // 当前定义的包结构:
-        // [ 2B (流ID，用来识别一次会话中的不同流，stream ID) | 4B (当前发送帧的帧序号，packet index) | 4B (当前帧包含包数量，packet shard count) | 4B (当前包序号，shard index)]
+        // 7.25: 定义当前包结构： [ 2B (流ID，用来识别一次会话中的不同流，stream ID) | 4B (当前发送帧的帧序号，packet index) | 4B (当前帧包含包数量，packet shard count) 
+        // | 4B (当前包序号，shard index)]
+        // Modified（7.29）: 为路由器预留字段，每个包到达路由器时的ECN，队列深度，信道利用率这些信息。
+        // 7.29：添加字段 | 1B ECN | 1B 队列深度 | 2B 信道利用率（CU）|
+        // （to be done）:实际上只有下行的视频数据包需要添加这些字段，也就是只有对stream_id==3的才需要添加路由器信息字段
         // 使用length delimited coding进行封包，在UDP payload开始会额外预留四个字节包含当前payload长度的信息。
-        // To be Done: 不同流对应的流ID：下行编码的视频流（3）上行控制流（0）
+        // 不同流对应的流ID：上行的用户动作（0） 下行的HAPTICS对齐（1） 下行的音频（2） 下行编码的视频流（3）上行的统计数据（4）
         // 其他每个包公用的包头在这里定义
-        const OFFSET: usize = 2 + 4 + 4 + 4;
+        const OFFSET: usize = 2 + 4 + 4 + 4 + 1 + 1 + 2;
         let max_shard_data_size = self.max_packet_size - OFFSET;
-
+        
         // 初始化header_buffer，并且预留header_size的长度，最后序列化header
         // 所有的数据用rust的bincode包进行序列化，serialized_size返回序列化需要的长度
         let header_size = bincode::serialized_size(header).map_err(err!()).unwrap() as usize;
@@ -172,7 +177,7 @@ impl<T: Serialize> StreamSender<T> {
 
         let total_shards_count = payload_shards.len() + header_shards.len();
 
-        //需要传输的udp payload总长度：帧包头+payload包头+总包数量*每个包头的长度（2+4+4+4）
+        //需要传输的udp payload总长度：message包头+payload包头+总包数量*每个包头的长度（2+4+4+4+1+1+2）
         let mut shards_buffer = BytesMut::with_capacity(
             header_size + payload_buffer.len() + total_shards_count * OFFSET,
         );
@@ -183,6 +188,11 @@ impl<T: Serialize> StreamSender<T> {
             shards_buffer.put_u32(self.next_packet_index);
             shards_buffer.put_u32(total_shards_count as _);
             shards_buffer.put_u32(shard_index as u32);
+            // 7.29: 后面是加入的路由器信息的一些字段
+            shards_buffer.put_u8(0x88);
+            shards_buffer.put_u8(0x77);
+            shards_buffer.put_u16(0x55);
+
             shards_buffer.put_slice(shard);
             self.send_buffer(shards_buffer.split()).await;
         }
@@ -265,7 +275,7 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
 
             loop {
                 // 目前hash表中存的包数量是否大于当前帧的包数量，大于的话会进行数据的组装并且返回
-                // Q：目前代码中丢包检测的逻辑不完善，并且不会请求重传
+                // Q：目前代码中丢包检测的逻辑不完善，在当前的代码块内不会请求重传，上次会请求重传关键帧
                 if let Some(shards_count) = current_packet_shards_count {
                     if current_packet_shards.len() >= shards_count {
                         buffer.inner.clear();
@@ -299,6 +309,11 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
                 let shard_packet_index = shard.get_u32();
                 let shards_count = shard.get_u32() as usize;
                 let shard_index = shard.get_u32() as usize;
+                // 7.29: (to be done) 需要每一帧统计一下ecn的均值，找个数据机构存一下
+                //（只有是视频帧（streamid==3）的时候才需要解析统计，需要显式反馈给client的数据统计，然后通过summary反馈给发送端）
+                let ecn_mark = shard.get_u8();
+                let queue_depth = shard.get_u8();
+                let channel_utility = shard.get_u16();
 
                 if shard_packet_index == current_packet_index {
                     current_packet_shards.insert(shard_index, shard);
@@ -331,7 +346,7 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
     pub async fn recv_header_only(&mut self) -> StrResult<T> {
         let mut buffer = ReceiverBuffer::new();
         self.recv_buffer(&mut buffer).await?;
-        // 接收并且拼装下一帧的包，反馈一个字符串列表（帧的包头和帧的数据）
+        // 接收并且拼装下一帧的包，反馈一个字符串列表（message的包头和message的数据）
         Ok(buffer.get()?.0)
     }
 }
