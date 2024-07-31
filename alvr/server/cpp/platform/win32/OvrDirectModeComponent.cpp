@@ -150,6 +150,7 @@ void OvrDirectModeComponent::SubmitLayer(const SubmitLayerPerEye_t(&perEye)[2])
 /** Submits queued layers for display. */
 void OvrDirectModeComponent::Present(vr::SharedTextureHandle_t syncTexture)
 {
+	// 当前时间是帧渲染完的时间，调用ReportPresent在stats数据中保存当前帧渲染完的时间
 	ReportPresent(m_targetTimestampNs, 0);
 
 	bool useMutex = true;
@@ -188,6 +189,7 @@ void OvrDirectModeComponent::Present(vr::SharedTextureHandle_t syncTexture)
 		}
 	}
 
+	// 调用编码器编码，进一步通过网络发送给对端
 	CopyTexture(layerCount);
 
 	if (useMutex) {
@@ -255,6 +257,7 @@ void OvrDirectModeComponent::CopyTexture(uint32_t layerCount) {
 	if (m_pEncoder) {
 		// Wait for the encoder to be ready.  This is important because the encoder thread
 		// blocks on transmit which uses our shared d3d context (which is not thread safe).
+		// 等待编码器空闲编码下一帧画面
 		m_pEncoder->WaitForEncode();
 
 		std::string debugText;
@@ -262,6 +265,7 @@ void OvrDirectModeComponent::CopyTexture(uint32_t layerCount) {
 		uint64_t submitFrameIndex = m_targetTimestampNs;
 
 		// Copy entire texture to staging so we can read the pixels to send to remote device.
+		// 提交给编码器进行编码
 		m_pEncoder->CopyToStaging(pTexture, bounds, layerCount,false, presentationTime, submitFrameIndex,"", debugText);
 
 		m_pD3DRender->GetContext()->Flush();

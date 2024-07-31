@@ -101,19 +101,19 @@ void processH265Nals(unsigned char *&buf, int &len) {
 
 void ParseFrameNals(
     int codec, unsigned char *buf, int len, unsigned long long targetTimestampNs, bool isIdr) {
-    // Report before the frame is packetized
+    // 此处刚刚编码完，调用ReportEncoded，把当前的时间戳达到stats中，作为编码完的时间。
     ReportEncoded(targetTimestampNs);
 
     if ((unsigned)len < sizeof(NAL_PREFIX_4B)) {
         return;
     }
-
+    // H.264和H.265编码完的原始数据会含有编码的一些信息（SPS，PPS），需要单独提取这些信息去初始化解码器。（To Be Done：提取分层信息）
     if (codec == ALVR_CODEC_H264) {
         processH264Nals(buf, len);
     } else if (codec == ALVR_CODEC_H265) {
         processH265Nals(buf, len);
     }
-
+    // 调用videosend向底层发
     VideoSend(targetTimestampNs, buf, len, isIdr);
     // fpOut.write(reinterpret_cast<const char*>(buf), len);
 }

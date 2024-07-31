@@ -387,6 +387,7 @@ pub unsafe extern "C" fn HmdDriverFactory(
                     file.write_all(&payload).ok();
                 }
 
+                // 如果不存在异常状态，应用层应该调用在获取VIDEO_SENDER互斥锁之后，通过try_send函数调用底层传输协议进行发送
                 if matches!(
                     sender.try_send(VideoPacket {
                         header: VideoPacketHeader { timestamp, is_idr },

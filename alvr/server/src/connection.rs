@@ -146,6 +146,16 @@ pub fn handshake_loop() -> IntResult {
     }
 }
 
+
+// 建立连接后调用并阻塞在
+// connection_pipeline(
+//     client_hostname,
+//     client_ip,
+//     control_sender,
+//     control_receiver,
+//     streaming_caps.microphone_sample_rate,
+//     fps,
+// )
 fn try_connect(mut client_ips: HashMap<IpAddr, String>) -> IntResult {
     let runtime = Runtime::new().map_err(to_int_e!())?;
 
@@ -619,6 +629,7 @@ async fn connection_pipeline(
 
     let settings = SERVER_DATA_MANAGER.read().settings().clone();
 
+    // 尝试通过指定的端口和协议与接收端建立连接，并且生成一个线程安全的socket
     let stream_socket = tokio::select! {
         res = StreamSocketBuilder::connect_to_client(
             client_ip,
@@ -634,6 +645,7 @@ async fn connection_pipeline(
     };
     let stream_socket = Arc::new(stream_socket);
 
+    // 生成一系列带互斥锁的管理模块的线程：包括数据处理模块，带宽探测模块以及维护GCC状态的一系列模块
     *STATISTICS_MANAGER.lock() = Some(StatisticsManager::new(
         settings.connection.statistics_history_size as _,
         Duration::from_secs_f32(1.0 / refresh_rate),
@@ -643,7 +655,6 @@ async fn connection_pipeline(
             0.0
         },
     ));
-
     *BITRATE_MANAGER.lock() = BitrateManager::new(
         settings.connection.statistics_history_size as _,
         refresh_rate,
@@ -671,6 +682,7 @@ async fn connection_pipeline(
         crate::create_recording_file();
     }
 
+    // 初始化传输
     unsafe { crate::InitializeStreaming() };
 
     let is_streaming = Arc::new(RelaxedAtomic::new(true));
@@ -768,19 +780,20 @@ async fn connection_pipeline(
 
     let video_send_loop = {
         let mut socket_sender = stream_socket.request_stream(VIDEO).await?;
+        // 创建异步的视频帧发送的线程
         async move {
             let (data_sender, mut data_receiver) =
                 tmpsc::channel(settings.connection.max_queued_server_video_frames);
             *VIDEO_SENDER.lock() = Some(data_sender);
 
+            //这里是一个while循环始终等待上层应用把帧发送到channel中，使用recv读出后，调用send发送
             while let Some(VideoPacket { header, payload }) = data_receiver.recv().await {
-                
                 socket_sender.send(&header, payload).await.ok();
+                // 获取数据处理模块的互斥锁，写入当前发送帧的发送时间戳
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     stats.report_send_timestamp(header.timestamp);
                 }
             }
-
             Ok(())
         }
     };

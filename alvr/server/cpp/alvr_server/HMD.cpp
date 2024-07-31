@@ -215,6 +215,7 @@ void Hmd::OnPoseUpdated(uint64_t targetTimestampNs, FfiDeviceMotion motion) {
 
     m_poseHistory->OnPoseUpdated(targetTimestampNs, motion);
 
+    // 调用接口更新用户动作
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
         this->object_id, pose, sizeof(vr::DriverPose_t));
 

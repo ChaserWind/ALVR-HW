@@ -230,7 +230,6 @@ impl PacketTiming {
 
 pub fn LinearFitSlope(packets:& VecDeque<PacketTiming>)->Option<f64> {
   if packets.len()>2 {
-            // Compute the "center of mass".
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
         for packet in packets {
@@ -239,7 +238,7 @@ pub fn LinearFitSlope(packets:& VecDeque<PacketTiming>)->Option<f64> {
         }
         let mut x_avg = sum_x / packets.len() as f64;
         let mut y_avg = sum_y / packets.len() as f64;
-        // Compute the slope k = \sum (x_i-x_avg)(y_i-y_avg) / \sum (x_i-x_avg)^2
+        // 斜率计算 k = \sum (x_i-x_avg)(y_i-y_avg) / \sum (x_i-x_avg)^2
         let mut numerator = 0.0;
         let mut denominator = 0.0;
         for packet in packets {
@@ -341,50 +340,63 @@ impl TrendlineEstimator{
         
 
         if modified_trend.abs() > self.threshold_ + 15.0 {
-        // Avoid adapting the threshold to big latency spikes, caused e.g.,
-        // by a sudden capacity drop.
+        // 如果出现了异常的延迟梯度升高，不予更新
         self.last_update_ms_ = now_ms;
         return;
         }
+
+        // 延迟梯度降低时快速降低阈值，延迟梯度升高时缓慢增加阈值（保证竞争性）
+        // k_down_= 0.039
+        // k_up_ = 0.0087
         let k = if modified_trend.abs() < self.threshold_ {
             self.k_down_
         } else {
             self.k_up_
         };
         
-        let  kMaxTimeDeltaMs = 100;//shishi 60*20,huifu 6.0
+        let  kMaxTimeDeltaMs = 100;
         let mut time_delta_ms = std::cmp::min(now_ms - self.last_update_ms_, kMaxTimeDeltaMs);
         self.threshold_ += k * (modified_trend.abs() - self.threshold_) * time_delta_ms as f64;
-        //update threshold wz,thresohold 类12.5，这里clamp
+        
         if self.threshold_>600.0 as f64{
             self.threshold_=600.0;
         }else if self.threshold_<6.0 as f64{
-            self.threshold_=6.0;//wanggai 1.0,shishi 1.5
+            self.threshold_=6.0;
         }
         self.last_update_ms_ = now_ms;
     }
 
 
     pub fn Detect( &mut self,trend: f64,ts_delta: f64, now_ms: i64) {
+        // 如果包组数量不够（刚启动），认为当前是正常状态
         if self.num_of_deltas_ < 2 {
           self.hypothesis_ = BandwidthUsage::kBwNormal;
           return;
         }
+
+        // 乘以包组数量以及阈值增益，因为计算得到的trend常常是一个非常小的值
         let modified_trend =
             std::cmp::min(self.num_of_deltas_, 60) as f64 * trend * self.threshold_gain_;
         self.prev_modified_trend_ = modified_trend;
         
+        // modified_trend > threshold_，且持续一段时间，同时这段时间内，modified_trend没有变小趋势，认为处于overuse状态
+        // modified_trend < -threshold_，认为处于underuse状态
+        // -threshold_ <= modified_trend <= threshold_，认为处于normal状态
         if modified_trend > self.threshold_ {
           if self.time_over_using_ == -1.0 {
-            // Initialize the timer. Assume that we've been
-            // over-using half of the time since the previous
-            // sample.
+            // 初始化计时器，认为从上次发送包开始已经有一半的时间处于over_using的状态
             self.time_over_using_ = ts_delta / 2.0;
           } else {
-            // Increment timer
+            // 计时器已经被初始化，则直接增加当前发送的时间间隔，这段时间都是over_using
             self.time_over_using_ += ts_delta;
           }
           self.overuse_counter_+=1;
+
+          // 如果：
+          //（1）总的over_using的时间超过阈值，
+          //（2）并且over_use的次数超过两次，
+          //（3）并且当前计算出来的trend要比之前计算出来的trend更大。
+          // 认为当前网络处于overusing状态
           if (self.time_over_using_ > self.overusing_time_threshold_ && self.overuse_counter_ > 1) {
             if trend >= self.prev_trend_ {
               self.time_over_using_ = 0.0;
@@ -392,10 +404,12 @@ impl TrendlineEstimator{
               self.hypothesis_ = BandwidthUsage::kBwOverusing;
             }
           }
+        // modified_trend < -threshold_，认为处于underuse状态
         } else if modified_trend < -self.threshold_ {
           self.time_over_using_ = -1.0;
           self.overuse_counter_ = 0;
           self.hypothesis_ = BandwidthUsage::kBwUnderusing;
+        // -threshold_ <= modified_trend <= threshold_，认为处于normal状态
         } else {
           self.time_over_using_ = -1.0;
           self.overuse_counter_ = 0;
@@ -404,6 +418,7 @@ impl TrendlineEstimator{
         self.current_threshold_for_testing=self.threshold_;
         self.current_trend_for_testing=modified_trend;
         self.prev_trend_ = trend;
+        // 为了和网络中存在的竞争流竞争带宽，更新动态阈值
         self.UpdateThreshold(modified_trend, now_ms);
       }
       
@@ -416,6 +431,7 @@ impl TrendlineEstimator{
         send_time_ms:i64,
         arrival_time_ms:i64,
         packet_size:i64) {
+            // 根据当前最新一帧和前一帧的发送和接收时间差计算时延梯度
                 let delta_ms = recv_delta_ms - send_delta_ms;
                 self.num_of_deltas_+=1;
                 self.num_of_deltas_ = std::cmp::min(self.num_of_deltas_, 1000);
@@ -424,29 +440,29 @@ impl TrendlineEstimator{
                 }
                 
 
-                // Exponential backoff filter.
+                // 计算累计的时延梯度并且用EWMA做平滑
                 self.accumulated_delay_ += delta_ms;
                 self.smoothed_delay_ = self.smoothing_coef_ * self.smoothed_delay_ +
                 (1.0 - self.smoothing_coef_) * self.accumulated_delay_;
                 
-                // Maintain packet window
-                self.delay_hist_.push_back(PacketTiming::new((arrival_time_ms-self.first_arrival_time_ms_) as f64,self.smoothed_delay_,self.accumulated_delay_));
+                // delay_hist_中保存了历史的（时间，时延梯度累积量）的数据
+                self.delay_hist_.push_back(PacketTiming::new((arrival_time_ms-self.first_arrival_time_ms_) as f64,
+                self.smoothed_delay_,self.accumulated_delay_));
                 if self.delay_hist_.len()> 20{
                     self.delay_hist_.pop_front();
                 }
                 
 
-                // Simple linear regression.
+                // 如果历史数据量大于20，使用一个线性拟合计算斜率为当前的拥塞情况（trend）
                 let mut  trend = self.prev_trend_;
                 if self.delay_hist_.len() == 20 {
-                // Update trend_ if it is possible to fit a line to the data. The delay
-                // trend can be seen as an estimate of (send_rate - capacity)/capacity.
-                // 0 < trend < 1   ->  the delay increases, queues are filling up
-                //   trend == 0    ->  the delay does not change
-                //   trend < 0     ->  the delay decreases, queues are being emptied
+                    // 使用线性拟合拟合斜率trend，trend的实际物理含义可以近似理解成(send_rate - capacity)/capacity.
+                    // 0 < trend < 1 -------> 当前delay正在升高，队列正在被填充
+                    // trend == 0    -------> 当前delay没有发生变化
+                    // trend < 0     -------> 延迟正在减少，队列正在被清空
                 trend = LinearFitSlope(&self.delay_hist_).unwrap_or(trend);
-                
                 }
+                // 根据当前时延变化的增长趋势判断网络的拥塞状况
                 self.Detect(trend, send_delta_ms, arrival_time_ms);
         }
                 
@@ -694,9 +710,6 @@ impl AimdRateControl{
     
     pub fn Update(&mut self,input:&RateControlInput,
          at_time:i64)-> f64 {
-        // Set the initial bit rate value to what we're receiving the first half
-        // second.
-        // TODO(bugs.webrtc.org/9379): The comment above doesn't match to the code.
         if !self.bitrate_is_initialized_ {
         let kInitializationTime = 5000 as i64;
         //RTC_DCHECK_LE(kBitrateWindowMs, kInitializationTime.ms());
@@ -743,25 +756,24 @@ impl AimdRateControl{
                 self.latest_estimated_throughput_ = input.estimated_throughput.unwrap();
             }
             
-
-            // An over-use should always trigger us to reduce the bitrate, even though
-            // we have not yet established our first estimate. By acting on the over-use,
-            // we will end up with a valid estimate.
             if !self.bitrate_is_initialized_ &&
             input.bw_state != BandwidthUsage::kBwOverusing{
                 return;
             }
             
-
             self.ChangeState(input, at_time);
 
             match self.rate_control_state_{
                 RateControlState::kRcHold=>{},
                 RateControlState::kRcIncrease => { 
+                    // ACK码率超过链路上限，超出99%置信区间，当前的链路瓶颈可能变化了，需要重新检测
                     if estimated_throughput > self.link_capacity_.UpperBound()
                     { 
                         self.link_capacity_.Reset(); 
                     }
+
+                    // 限制最大估计码率为ACK码率的1.5倍，避免没有限制的增加
+                    // 额外增加10kbps是为了避免在低带宽时增加太慢
                     let mut increase_limit = 1.5 * estimated_throughput + 10240.0;
                     if self.send_side_ && self.in_alr_ && self.no_bitrate_increase_in_alr_ {
                         increase_limit = self.current_bitrate_;
@@ -769,10 +781,12 @@ impl AimdRateControl{
 
                     if self.current_bitrate_ < increase_limit {
                         let mut increased_bitrate = -std::f64::INFINITY;
+                         // 之前已经估计出链路的瓶颈了（link capacity有结果），此时的增加需要谨慎，因此需要线性增加
                         if self.link_capacity_.has_estimate() {
                             let additive_increase = self.AdditiveRateIncrease(at_time, self.time_last_bitrate_change_);
                             increased_bitrate = self.current_bitrate_ + additive_increase;
                         } else {
+                            // 压根没有达到链路瓶颈，没有出现过overuse，可以加快速度估计，这是可以1.08倍指数级增加
                             let multiplicative_increase = self.MultiplicativeRateIncrease(
                                 at_time, self.time_last_bitrate_change_, self.current_bitrate_
                             );
@@ -782,10 +796,13 @@ impl AimdRateControl{
                     }
                     self.time_last_bitrate_change_ = at_time;
                     },
+                
+                
                 RateControlState::kRcDecrease => {
                     let mut decreased_bitrate = std::f64::INFINITY;
-
+                    // beta默认0.85，降低按照0.85倍降低，按照估计的接收速率的0.85倍
                     decreased_bitrate = estimated_throughput * self.beta_;
+                    // 如果比当前的估计带宽还要大，那么按照链路能力的0.85倍，链路能力估计较为稳定，也较低
                     if decreased_bitrate > self.current_bitrate_  {
                         if self.link_capacity_.has_estimate() {
                             decreased_bitrate = self.beta_ * self.link_capacity_.estimate();
@@ -803,14 +820,17 @@ impl AimdRateControl{
                             self.last_decrease_ = Option::None;
                         }
                     }
-
+                    
+                    // 当前的估计码率低于link capacity下限，即超过99%置信区间，我们对link capacity的准确度标识怀疑
                     if estimated_throughput < self.link_capacity_.LowerBound() {
                         self.link_capacity_.Reset();
                     }
 
                     self.bitrate_is_initialized_ = true;
                     self.esitmate_thr_testing=estimated_throughput;
+                    // 每次overuse降低带宽的时候更新link capacity
                     self.link_capacity_.OnOveruseDetected(estimated_throughput);
+                    // 降低后先进入hold状态
                     self.rate_control_state_ = RateControlState::kRcHold;
                     self.time_last_bitrate_change_ = at_time;
                     self.time_last_bitrate_decrease_ = at_time;
@@ -900,8 +920,10 @@ impl BitrateEstimator{
                 self.current_window_ms_ = 0;
               }
               if self.prev_time_ms_ >= 0 {
+                //更新当前时间窗口的长度
                 self.current_window_ms_ += now_ms - self.prev_time_ms_;
-                // Reset if nothing has been received for more than a full window.
+
+                // 如果超过一个时间窗口内没有收到任何数据包组，这个时间窗口就不能被用来计算接收速率
                 if now_ms - self.prev_time_ms_ > rate_window_ms {
                     self.sum_ = 0;
                     self.current_window_ms_ %= rate_window_ms;
@@ -909,20 +931,23 @@ impl BitrateEstimator{
               }
               self.prev_time_ms_ = now_ms;
               let mut bitrate_sample = -1.0;
+              // 当前时间窗口超过了统计间隔，则用来计算即时的接收速率
               if self.current_window_ms_ >= rate_window_ms {
+                // 如果这个时间窗口内收到的数据量小于阈值，认为是一个接收速率小的样本
                 *is_small_sample = self.sum_ < self.small_sample_threshold_ as i64;
                 bitrate_sample = 8.0 * self.sum_ as f64 / rate_window_ms as f64;
                 self.current_window_ms_ -= rate_window_ms;
                 self.sum_ = 0;
               }
               self.sum_ += bytes as i64;
+              // 返回按照滑动窗口统计的接收速率
               return bitrate_sample;
          }
 
     pub fn Update(&mut self, at_time:i64,  amount:usize,  in_alr:bool){
         let mut rate_window_ms = self.noninitial_window_ms_;
-        // We use a larger window at the beginning to get a more stable sample that
-        // we can use to initialize the estimate.
+        // 在一开始没有接收带宽估计的时候，使用一个更大的统计时间窗口（350ms）来保证得到一个稳定的估计值,
+        // 如果已经有了带宽的估计，则使用250ms作为统计时间窗口
         if self.bitrate_estimate_kbps_ < 0.0{
             rate_window_ms = self.initial_window_ms_;
         }
@@ -936,23 +961,21 @@ impl BitrateEstimator{
         }
             
         if self.bitrate_estimate_kbps_ < 0.0{
-            // This is the very first sample we get. Use it to initialize the estimate.
+            // 初始化：如果还没有接收带宽的估计，就直接用采到的样本。
             self.bitrate_estimate_kbps_ = bitrate_sample_kbps;
             return;
         }
-        // Optionally use higher uncertainty for very small samples to avoid dropping
-        // estimate and for samples obtained in ALR.
+        // 对于：
+        // (1)采集到的速率异常低，并且小于当前估计值的sample，
+        // (2)处于applimit阶段，并且小于当前估计值的sample，
+        // 增加不确定性权重
         let mut scale = self.uncertainty_scale_;
         if is_small_sample && bitrate_sample_kbps < self.bitrate_estimate_kbps_ {
             scale = self.small_sample_uncertainty_scale_;
         } else if in_alr && bitrate_sample_kbps < self.bitrate_estimate_kbps_ {
-            // Optionally use higher uncertainty for samples obtained during ALR.
             scale = self.uncertainty_scale_in_alr_;
         }
-        // Define the sample uncertainty as a function of how far away it is from the
-        // current estimate. With low values of uncertainty_symmetry_cap_ we add more
-        // uncertainty to increases than to decreases. For higher values we approach
-        // symmetry.
+        // 根据sample的速率和当前估计值的距离计算当前样本的不确定性
         let mut sample_uncertainty =
             scale * (self.bitrate_estimate_kbps_ - bitrate_sample_kbps).abs() /
             (self.bitrate_estimate_kbps_ +
@@ -960,10 +983,7 @@ impl BitrateEstimator{
                         self.uncertainty_symmetry_cap_ as f64));
 
         let mut  sample_var = sample_uncertainty * sample_uncertainty;
-        // Update a bayesian estimate of the rate, weighting it lower if the sample
-        // uncertainty is large.
-        // The bitrate estimate uncertainty is increased with each update to model
-        // that the bitrate changes over time.
+        // 使用一个贝叶斯估计接收带宽的值，如果样本的不确定性偏高，就赋予更低的权重
         let mut pred_bitrate_estimate_var = self.bitrate_estimate_var_ + 5.0;
         self.bitrate_estimate_kbps_ = (sample_var * self.bitrate_estimate_kbps_ +
                                     pred_bitrate_estimate_var * bitrate_sample_kbps) /

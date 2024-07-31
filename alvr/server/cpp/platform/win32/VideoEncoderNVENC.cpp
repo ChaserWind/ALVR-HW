@@ -122,6 +122,7 @@ void VideoEncoderNVENC::Shutdown()
 
 bool VideoEncoderNVENC::Transmit(ID3D11Texture2D *pTexture, uint64_t presentationTime, uint64_t targetTimestampNs, bool insertIDR, bool ReEncode)
 {
+	// 底层的码率控制算法通过修改params直接修改编码器设置，从而控制编码出来的帧大小
 	auto params = GetDynamicEncoderParams();
 	if (params.updated) {
 		m_bitrateInMBits = params.bitrate_bps / 1'000'000;
@@ -160,6 +161,7 @@ bool VideoEncoderNVENC::Transmit(ID3D11Texture2D *pTexture, uint64_t presentatio
 			fpOut.write(reinterpret_cast<char*>(packet.data()), packet.size());
 		}
 		
+		//编码完成，将编码完的帧发送给底层发送
 		ParseFrameNals(m_codec, packet.data(), (int)packet.size(), targetTimestampNs, insertIDR);
 		//break;
 	}

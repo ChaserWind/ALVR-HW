@@ -26,8 +26,8 @@ pub struct HistoryFrame {
     frame_send_timestamp:i64,
     total_packets_belong:i64,
     total_size_for_this_frame:usize,
-    reported:bool,//wz repeat
-    last_repeat_game_latency:Duration,//wz repeat
+    reported:bool,
+    last_repeat_game_latency:Duration,
     save_flag:bool,
 }
 
@@ -295,11 +295,13 @@ impl StatisticsManager {
     pub fn report_battery(&mut self, device_id: u64, gauge_value: f32) {
         *self.battery_gauges.entry(device_id).or_default() = gauge_value;
     }
-
+    
+    //在这里接收clientstatistics中如果有plr则output到csvfile中
     // Called every frame. Some statistics are reported once every frame
     // Returns network latency
+    // 
     pub fn report_statistics(&mut self, client_stats: ClientStatistics,current_bitrate:u64,bandwidth:u64) -> Duration {
-        //在这里接收clientstatistics中如果有plr则output到csvfile中
+        
         if let Some(frame) = self
             .history_buffer
             .iter_mut()
@@ -310,6 +312,8 @@ impl StatisticsManager {
             if self.first_data_send_timestamp==-1{
                 self.first_data_send_timestamp=frame.frame_send_timestamp;
             }
+
+            // 计算帧发出的时间间隔 和 帧接收的时间间隔
             let mut send_delta_ms=0.0;
             let mut recv_delta_ms=0.0;
             if self.last_frame_send_timestamp!=0{
@@ -333,6 +337,8 @@ impl StatisticsManager {
             let mut b_s=f32::default();
             let mut bitrate_estimate_rtc=f64::default();
             if delta_flag{
+
+                //使用线性回归计算当前网络拥堵情况
                 //TRENDLINE_MANGER.lock().UpdateTrendline(arrival_time_delta_ms as f64, timestamp_delta as f64, (frame.frame_send_timestamp as f64 *0.001) as i64, (client_stats.frame_arrival_timestamp as f64 *0.001)as i64, frame.total_size_for_this_frame as i64);
                 TRENDLINE_MANGER.lock().UpdateTrendline(recv_delta_ms, send_delta_ms, (frame.frame_send_timestamp as f64 *0.001) as i64, (client_stats.frame_arrival_timestamp as f64 *0.001)as i64, frame.total_size_for_this_frame as i64);
                 
