@@ -381,6 +381,7 @@ impl StatisticsManager {
                 
                 //看ratecontrolinput中estimate bandwidth值是不是0，现在不加不减，或者是multiple赠的时候出问题了
                 target_bitrate_bps_inrtc=(AIMD_MANGER.lock().Update(&RateControlInput_MANGER.lock(), (Utc::now().timestamp_micros() as f64 *0.001) as i64)/1024.0/1024.0).to_string();
+                // 8.5固定编码码率？？ AIMD_MANGER.lock().current_bitrate_ = 50. * 1024. * 1024.;
                 difference=AIMD_MANGER.lock().current_bitrate_-self.prev_target_bitrate_inrtc;
                 let prev_target_bitrate=self.prev_target_bitrate_inrtc;
                 self.prev_target_bitrate_inrtc=AIMD_MANGER.lock().current_bitrate_;
@@ -538,7 +539,7 @@ impl StatisticsManager {
             let mut interval_VideoReceivedByClient_VideoDecoded=(client_stats.video_decode.as_secs_f32() * 1000.).to_string();//decode latency
             let mut interval_network=((network_latency.as_secs_f32()*1000.).to_string());//network latency(interval_trackingsend_trackingreceived+interval_encodedVideoSend_encodedVideoReceived)
             let mut interval_total_pipeline=(frame.total_pipeline_latency.as_secs_f32() * 1000.).to_string();//total pipeline latency wz repeat
-            let mut target_bitrate=(current_bitrate/1024/1024).to_string();//target bitrate
+            let mut target_bitrate=(AIMD_MANGER.lock().current_bitrate_/1024./1024.).to_string();//target bitrate
             let mut shard_loss_rate=client_stats.shard_loss_rate.to_string();
             if client_stats.flag_plr{
                 plr=(client_stats.plr*100.0).to_string();//pakcet loss rate record every second
@@ -592,7 +593,7 @@ impl StatisticsManager {
             
             let experiment_target_timestamp=Local::now().format("%Y%m%d_%H%M%S").to_string();
             let latency_strings=[interval_trackingReceived_framePresentInVirtualDevice,interval_framePresentInVirtualDevice_frameComposited,interval_frameComposited_VideoEncoded,interval_VideoReceivedByClient_VideoDecoded,interval_network,(client_stats.video_decoder_queue.as_secs_f32()*1000.).to_string(),(client_stats.rendering.as_secs_f32()*1000.).to_string(),(client_stats.vsync_queue.as_secs_f32()*1000.).to_string(),interval_total_pipeline,target_bitrate,plr,bitrate_statistics,total_packets_send,average_packet_size,shard_loss_rate,frame.total_size_for_this_frame.to_string(),frame_send_timestamp,frame_arrive_timestamp,total_size_for_this_frame,total_packets_for_this_frame,timestamp_delta_string,arrival_time_delta_ms_string,packet_size_delta_string,network_estimate,threshold_c,m_trend,target_bitrate_bps_inrtc,current_state,next_state,bitrate_pass_to_webrtc,difference.to_string(),last_decrease,link_lower,link_upper,link_has_estimate,link_estimate,link_devia,test_thr,input_thr,bitrate_estimate_rtc.to_string(),gradient_c.to_string(),delta.to_string(),self.state.to_string(),frame.target_timestamp.as_nanos().to_string(),client_stats.flag_debug.to_string(),client_stats.is_idr.to_string(),AIMD_MANGER.lock().normalize_delta.to_string(),experiment_target_timestamp];
-            write_latency_to_csv("C:\\AT\\QP_manager\\build\\alvr_streamer_windows\\statistics.csv", latency_strings);
+            write_latency_to_csv("C:\\Users\\zhang\\Documents\\ALVR-HW\\build\\alvr_streamer_windows\\statistics.csv", latency_strings);
 
             alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {
                 total_pipeline_latency_s: frame.total_pipeline_latency.as_secs_f32(),//wz repeat

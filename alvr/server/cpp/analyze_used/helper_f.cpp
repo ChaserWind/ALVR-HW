@@ -15,7 +15,7 @@ int get_save_frame_feq(){
     return save_frame_feq;
 }
 
-std::string filename_s = "C:\\AT\\QP_manager\\build\\alvr_streamer_windows\\";
+std::string filename_s = "C:\\Users\\zhang\\Documents\\ALVR-HW\\build\\alvr_streamer_windows\\";
 
 std::string get_path_head(){
     return filename_s;
