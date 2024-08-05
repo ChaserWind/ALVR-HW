@@ -21,7 +21,7 @@ VideoEncoderNVENC::VideoEncoderNVENC(std::shared_ptr<CD3DRender> pD3DRender
 	, m_refreshRate(Settings::Instance().m_refreshRate)
 	, m_renderWidth(width)
 	, m_renderHeight(height)
-	, m_bitrateInMBits(30)
+	, m_bitrateInMBits(300)
 {
 	//fpOut.open("C:\\AT\\ALVR\\build\\alvr_streamer_windows\\output.h264");
 }

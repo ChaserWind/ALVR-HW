@@ -621,7 +621,7 @@ impl AimdRateControl{
     pub fn new(send_side:bool)->Self{
         Self{
             min_configured_bitrate_:50000.0,
-            max_configured_bitrate_:500.0*1024.0*1024.0,
+            max_configured_bitrate_:150.0*1024.0*1024.0,
             current_bitrate_:30000.0*1024.0,
             latest_estimated_throughput_:30000.0*1024.0,
             link_capacity_:LinkCapacityEstimator::new() ,

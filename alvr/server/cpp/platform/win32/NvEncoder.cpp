@@ -672,19 +672,19 @@ int8_t* NvEncoder::GetQpMapLevel(int QpMapSize, int states, float normalize_valu
         int8_t lv_C = get_level(QP_C);
         if(states==2){
             if(lv_B>lv_A+1){
-                Temp_B = Temp_B - (0.1);
+                Temp_B = Temp_B - (1);
             }
             else if(lv_C>lv_B+1){
-                Temp_C = Temp_C - (0.1);
+                Temp_C = Temp_C - (1);
             }
             else if(QP_A > -19){
-                Temp_A = Temp_A - (0.1);
+                Temp_A = Temp_A - (1);
             }
             else if(QP_B > -19){
-                Temp_B = Temp_B - (0.1);
+                Temp_B = Temp_B - (1);
             }
             else if(QP_C > -19){
-                Temp_C = Temp_C - (0.1);
+                Temp_C = Temp_C - (1);
             }
         }
         else if(states == 0){

@@ -140,7 +140,7 @@ impl BitrateManager {
         
         bitrate_bps=AIMD_MANGER.lock().flag_for_qp;
         let nol=AIMD_MANGER.lock().normalize_delta;
-        let tps=AIMD_MANGER.lock().current_bitrate_/72./8.;
+        let tps=AIMD_MANGER.lock().current_bitrate_/120./8.;
         // let bitrate_bps = match &config.mode {
         //     BitrateMode::ConstantMbps(bitrate_mbps) => *bitrate_mbps as f32 * 1e6,
         //     BitrateMode::Adaptive {

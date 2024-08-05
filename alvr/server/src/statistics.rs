@@ -386,8 +386,8 @@ impl StatisticsManager {
                 let prev_target_bitrate=self.prev_target_bitrate_inrtc;
                 self.prev_target_bitrate_inrtc=AIMD_MANGER.lock().current_bitrate_;
 
-                let mut delta=AIMD_MANGER.lock().current_bitrate_/72./8.+prev_target_bitrate/72./8.-2.*(frame.total_size_for_this_frame as f64);
-                let normalize=delta/(AIMD_MANGER.lock().current_bitrate_/72./8.);
+                let mut delta=AIMD_MANGER.lock().current_bitrate_/120./8.+prev_target_bitrate/120./8.-2.*(frame.total_size_for_this_frame as f64);
+                let normalize=delta/(AIMD_MANGER.lock().current_bitrate_/120./8.);
                 AIMD_MANGER.lock().normalize_delta=normalize;
                 self.accumulate_delta+=delta;
                 self.smooth_delta=0.9*self.smooth_delta+0.1*self.accumulate_delta;
@@ -577,7 +577,7 @@ impl StatisticsManager {
             if RateControlInput_MANGER.lock().estimated_throughput.is_some(){
                 input_thr=RateControlInput_MANGER.lock().estimated_throughput.unwrap().to_string();
             }
-            let mut delta=AIMD_MANGER.lock().current_bitrate_/72./8.-frame.total_size_for_this_frame as f64;
+            let mut delta=AIMD_MANGER.lock().current_bitrate_/120./8.-frame.total_size_for_this_frame as f64;
             let mut gradient_c=self.gradient;
             if gradient_c>0.&& delta>0.{
                 self.state=2;
