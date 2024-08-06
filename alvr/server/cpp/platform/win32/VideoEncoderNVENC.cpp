@@ -233,13 +233,13 @@ void VideoEncoderNVENC::FillEncodeConfig(NV_ENC_INITIALIZE_PARAMS &initializePar
 	if (m_codec == ALVR_CODEC_H264) {
 		auto &config = encodeConfig.encodeCodecConfig.h264Config;
 		config.repeatSPSPPS = 1;
-		config.enableIntraRefresh = Settings::Instance().m_nvencEnableIntraRefresh;
+		config.enableIntraRefresh = true;
 		
 		if (Settings::Instance().m_nvencIntraRefreshPeriod != -1) {
-			config.intraRefreshPeriod = Settings::Instance().m_nvencIntraRefreshPeriod;
+			config.intraRefreshPeriod = 10;
 		}
 		if (Settings::Instance().m_nvencIntraRefreshCount != -1) {
-			config.intraRefreshCnt = Settings::Instance().m_nvencIntraRefreshCount;
+			config.intraRefreshCnt = 10;
 		}
 
 		switch (Settings::Instance().m_entropyCoding) {
@@ -261,13 +261,13 @@ void VideoEncoderNVENC::FillEncodeConfig(NV_ENC_INITIALIZE_PARAMS &initializePar
 	else {
 		auto &config = encodeConfig.encodeCodecConfig.hevcConfig;
 		config.repeatSPSPPS = 1;
-		config.enableIntraRefresh = Settings::Instance().m_nvencEnableIntraRefresh;
+		config.enableIntraRefresh = true;
 
 		if (Settings::Instance().m_nvencIntraRefreshPeriod != -1) {
-			config.intraRefreshPeriod = Settings::Instance().m_nvencIntraRefreshPeriod;
+			config.intraRefreshPeriod = 10;
 		}
 		if (Settings::Instance().m_nvencIntraRefreshCount != -1) {
-			config.intraRefreshCnt = Settings::Instance().m_nvencIntraRefreshCount;
+			config.intraRefreshCnt = 10;
 		}
 
 		config.maxNumRefFramesInDPB = maxNumRefFrames;

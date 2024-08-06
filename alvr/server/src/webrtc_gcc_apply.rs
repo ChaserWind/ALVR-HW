@@ -946,7 +946,7 @@ impl BitrateEstimator{
               return bitrate_sample;
          }
 
-    pub fn Update(&mut self, at_time:i64,  amount:usize,  in_alr:bool){
+    pub fn Update(&mut self, at_time:i64, first_packet_receive_time:i64,  amount:usize,  in_alr:bool){
         let mut rate_window_ms = self.noninitial_window_ms_;
         // 在一开始没有接收带宽估计的时候，使用一个更大的统计时间窗口（350ms）来保证得到一个稳定的估计值,
         // 如果已经有了带宽的估计，则使用250ms作为统计时间窗口
@@ -955,8 +955,16 @@ impl BitrateEstimator{
         }
             
         let mut is_small_sample = false;
-        let mut bitrate_sample_kbps = self.UpdateWindow(at_time, amount,
-                                                rate_window_ms, &mut is_small_sample);
+        //let mut bitrate_sample_kbps = self.UpdateWindow(at_time, amount,
+        //                                        rate_window_ms, &mut is_small_sample);
+
+        let mut bitrate_sample_kbps = -1.0;
+
+        //8.6:尝试采用burst的方式采样接收速率
+        if at_time > first_packet_receive_time{
+            bitrate_sample_kbps = 8.0 * amount as f64 / (at_time as f64 - first_packet_receive_time as f64);
+        }
+
         if bitrate_sample_kbps < 0.0
         {
             return;

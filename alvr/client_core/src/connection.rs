@@ -420,7 +420,7 @@ async fn stream_pipeline(
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     total_packets+=1;
-                    stats.report_video_packet_received(header.timestamp);
+                    stats.report_video_packet_received(header.timestamp, receiver_buffer.first_packet_receive_time, receiver_buffer.last_packet_receive_time);
                 }
                 if receiver_buffer.had_packet_loss(){
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {

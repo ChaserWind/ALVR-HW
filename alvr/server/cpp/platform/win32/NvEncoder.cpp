@@ -672,19 +672,19 @@ int8_t* NvEncoder::GetQpMapLevel(int QpMapSize, int states, float normalize_valu
         int8_t lv_C = get_level(QP_C);
         if(states==2){
             if(lv_B>lv_A+1){
-                Temp_B = Temp_B - (1);
+                Temp_B = Temp_B - (0.1);
             }
             else if(lv_C>lv_B+1){
-                Temp_C = Temp_C - (1);
+                Temp_C = Temp_C - (0.1);
             }
             else if(QP_A > -19){
-                Temp_A = Temp_A - (1);
+                Temp_A = Temp_A - (0.1);
             }
             else if(QP_B > -19){
-                Temp_B = Temp_B - (1);
+                Temp_B = Temp_B - (0.1);
             }
             else if(QP_C > -19){
-                Temp_C = Temp_C - (1);
+                Temp_C = Temp_C - (0.1);
             }
         }
         else if(states == 0){
@@ -793,11 +793,11 @@ bool NvEncoder::GetEncodedPacket(std::vector<NV_ENC_OUTPUT_PTR> &vOutputBuffer, 
         uint8_t *pData = (uint8_t *)lockBitstreamData.bitstreamBufferPtr;
         if(lockBitstreamData.bitstreamSizeInBytes>TPS*2){
             if(Temp_A<32.0)
-            Temp_A += 2;
+            Temp_A += 1;
             if(Temp_B<32.0)
-            Temp_B += 2;
+            Temp_B += 1;
             if(Temp_C<32.0)
-            Temp_C += 2;
+            Temp_C += 1;
             if(!ReEncoding){
                 ReEncode = true;
             }

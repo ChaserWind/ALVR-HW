@@ -208,7 +208,9 @@ pub struct ClientStatistics {
     pub plr: f64,
     pub flag_plr: bool,
     pub flag_slr:bool,
-    pub frame_arrival_timestamp:i64,
+    pub frame_arrival_timestamp: i64,
+    pub first_packet_receive_time: i64,
+    pub last_packet_receive_time: i64,
     pub flag_debug:i32,
     pub is_idr:bool,
 }

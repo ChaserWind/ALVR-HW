@@ -1,6 +1,7 @@
 use alvr_common::{SlidingWindowAverage, HEAD_ID, LEFT_HAND_ID, RIGHT_HAND_ID};
 use alvr_events::{EventType, GraphStatistics, Statistics};
 use alvr_packets::ClientStatistics;
+use hyper::client;
 use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant, self}, f64::{NAN, INFINITY}, 
@@ -307,7 +308,9 @@ impl StatisticsManager {
             .iter_mut()
             .find(|frame| frame.target_timestamp == client_stats.target_timestamp)
         {
-            
+            if frame.total_packets_belong != 1{
+                return Duration::ZERO
+            }
             
             if self.first_data_send_timestamp==-1{
                 self.first_data_send_timestamp=frame.frame_send_timestamp;
@@ -318,10 +321,12 @@ impl StatisticsManager {
             let mut recv_delta_ms=0.0;
             if self.last_frame_send_timestamp!=0{
                 send_delta_ms=(frame.frame_send_timestamp-self.last_frame_send_timestamp) as f64 *0.001;
-                recv_delta_ms=(client_stats.frame_arrival_timestamp-self.last_frame_arrival_timestamp) as f64 *0.001;
+                //recv_delta_ms=(client_stats.frame_arrival_timestamp-self.last_frame_arrival_timestamp) as f64 *0.001;
+                recv_delta_ms = (client_stats.first_packet_receive_time - self.last_frame_arrival_timestamp) as f64 *0.001;
             } 
             self.last_frame_send_timestamp=frame.frame_send_timestamp;
-            self.last_frame_arrival_timestamp=client_stats.frame_arrival_timestamp;
+            //self.last_frame_arrival_timestamp=client_stats.frame_arrival_timestamp;
+            self.last_frame_arrival_timestamp = client_stats.first_packet_receive_time;
             
             let mut timestamp_delta=send_delta_ms.to_string();//i64::default();
             let mut arrival_time_delta_ms=recv_delta_ms.to_string();//i64::default();
@@ -364,7 +369,7 @@ impl StatisticsManager {
                     current_state="increase".to_string();
                 }
                 
-                BitrateEstimator_MANGER.lock().Update((client_stats.frame_arrival_timestamp as f64*0.001) as i64,frame.total_size_for_this_frame,false);
+                BitrateEstimator_MANGER.lock().Update((client_stats.last_packet_receive_time as f64*0.001) as i64,(client_stats.first_packet_receive_time as f64*0.001) as i64,frame.total_size_for_this_frame,false);
                 if BitrateEstimator_MANGER.lock().bitrate().is_some(){
                     bitrate_estimate_rtc=BitrateEstimator_MANGER.lock().bitrate().unwrap();
                     RateControlInput_MANGER.lock().estimated_throughput=Some(bitrate_estimate_rtc);
@@ -381,7 +386,8 @@ impl StatisticsManager {
                 
                 //看ratecontrolinput中estimate bandwidth值是不是0，现在不加不减，或者是multiple赠的时候出问题了
                 target_bitrate_bps_inrtc=(AIMD_MANGER.lock().Update(&RateControlInput_MANGER.lock(), (Utc::now().timestamp_micros() as f64 *0.001) as i64)/1024.0/1024.0).to_string();
-                // 8.5固定编码码率？？ AIMD_MANGER.lock().current_bitrate_ = 50. * 1024. * 1024.;
+                // 8.5固定编码码率？？ 
+                AIMD_MANGER.lock().current_bitrate_ = 50. * 1024. * 1024.;
                 difference=AIMD_MANGER.lock().current_bitrate_-self.prev_target_bitrate_inrtc;
                 let prev_target_bitrate=self.prev_target_bitrate_inrtc;
                 self.prev_target_bitrate_inrtc=AIMD_MANGER.lock().current_bitrate_;
@@ -550,6 +556,8 @@ impl StatisticsManager {
             //let mut bdw=(current_bitrate as f64)/(1.0-client_stats.plr)/((network_latency.as_secs_f32()*1000.)as f64);//bitrate/(1-plr)/network latency
             let mut frame_send_timestamp=frame.frame_send_timestamp.to_string();
             let mut frame_arrive_timestamp=client_stats.frame_arrival_timestamp.to_string();
+            let mut first_packet_arrive = client_stats.first_packet_receive_time.to_string();
+            let mut last_packet_arrive = client_stats.last_packet_receive_time.to_string();
             let mut total_size_for_this_frame=frame.total_size_for_this_frame.to_string();
             let mut total_packets_for_this_frame=frame.total_packets_belong.to_string();
             let mut timestamp_delta_string="".to_string();
@@ -592,7 +600,8 @@ impl StatisticsManager {
             AIMD_MANGER.lock().flag_for_qp=self.state;
             
             let experiment_target_timestamp=Local::now().format("%Y%m%d_%H%M%S").to_string();
-            let latency_strings=[interval_trackingReceived_framePresentInVirtualDevice,interval_framePresentInVirtualDevice_frameComposited,interval_frameComposited_VideoEncoded,interval_VideoReceivedByClient_VideoDecoded,interval_network,(client_stats.video_decoder_queue.as_secs_f32()*1000.).to_string(),(client_stats.rendering.as_secs_f32()*1000.).to_string(),(client_stats.vsync_queue.as_secs_f32()*1000.).to_string(),interval_total_pipeline,target_bitrate,plr,bitrate_statistics,total_packets_send,average_packet_size,shard_loss_rate,frame.total_size_for_this_frame.to_string(),frame_send_timestamp,frame_arrive_timestamp,total_size_for_this_frame,total_packets_for_this_frame,timestamp_delta_string,arrival_time_delta_ms_string,packet_size_delta_string,network_estimate,threshold_c,m_trend,target_bitrate_bps_inrtc,current_state,next_state,bitrate_pass_to_webrtc,difference.to_string(),last_decrease,link_lower,link_upper,link_has_estimate,link_estimate,link_devia,test_thr,input_thr,bitrate_estimate_rtc.to_string(),gradient_c.to_string(),delta.to_string(),self.state.to_string(),frame.target_timestamp.as_nanos().to_string(),client_stats.flag_debug.to_string(),client_stats.is_idr.to_string(),AIMD_MANGER.lock().normalize_delta.to_string(),experiment_target_timestamp];
+            let latency_strings=[interval_frameComposited_VideoEncoded,interval_VideoReceivedByClient_VideoDecoded,interval_network,(client_stats.video_decoder_queue.as_secs_f32()*1000.).to_string(),(client_stats.rendering.as_secs_f32()*1000.).to_string(),(client_stats.vsync_queue.as_secs_f32()*1000.).to_string(),interval_total_pipeline,target_bitrate,plr,bitrate_statistics,total_packets_send,average_packet_size,shard_loss_rate,frame.total_size_for_this_frame.to_string(),frame_send_timestamp,first_packet_arrive,last_packet_arrive,frame_arrive_timestamp,total_size_for_this_frame,total_packets_for_this_frame,timestamp_delta_string,arrival_time_delta_ms_string,packet_size_delta_string,network_estimate,threshold_c,m_trend,target_bitrate_bps_inrtc,current_state,next_state,bitrate_pass_to_webrtc,difference.to_string(),last_decrease,link_lower,link_upper,link_has_estimate,link_estimate,link_devia,test_thr,input_thr,bitrate_estimate_rtc.to_string(),gradient_c.to_string(),delta.to_string(),self.state.to_string(),frame.target_timestamp.as_nanos().to_string(),client_stats.flag_debug.to_string(),client_stats.is_idr.to_string(),AIMD_MANGER.lock().normalize_delta.to_string(),experiment_target_timestamp];
+            
             write_latency_to_csv("C:\\Users\\zhang\\Documents\\ALVR-HW\\build\\alvr_streamer_windows\\statistics.csv", latency_strings);
 
             alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {

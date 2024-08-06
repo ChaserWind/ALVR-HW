@@ -18,12 +18,18 @@ use std::{
     mem,
     net::IpAddr,
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 use tcp::{TcpStreamReceiveSocket, TcpStreamSendSocket};
 use tokio::net;
 use tokio::sync::{mpsc, Mutex};
 use udp::{UdpStreamReceiveSocket, UdpStreamSendSocket};
+
+// 8.6:新增新的包的引用
+use chrono::{Utc, TimeZone, Local, format::{strftime, StrftimeItems}};
+use alvr_packets::{
+    ButtonValue, ClientConnectionResult, ClientControlPacket, ClientListAction, ClientStatistics, ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader, AUDIO, HAPTICS, STATISTICS, TRACKING, VIDEO
+};
 
 pub fn set_socket_buffers(
     socket: &socket2::Socket,
@@ -148,7 +154,7 @@ impl<T: Serialize> StreamSender<T> {
     //将message序列化成包并且发送，message有自己的header（例如帧的发送时间戳等），同时序列化之后，每个包有自己的header（帧序号，添加的路由器字段等）
     pub async fn send(&mut self, header: &T, payload_buffer: Vec<u8>) -> StrResult {
         // 当前定义的包结构:
-        // 7.25: 定义当前包结构： [ 2B (流ID，用来识别一次会话中的不同流，stream ID) | 4B (当前发送帧的帧序号，packet index) | 4B (当前帧包含包数量，packet shard count) 
+        // 7.25: 定义当前包结构： [ 2B (流ID，用来识别一次会话中的不同流，stream ID) | 2B (流ID会被底层socket消耗，为了识别流类型还需要再复制一遍) | 4B (当前发送帧的帧序号，packet index) | 4B (当前帧包含包数量，packet shard count) 
         // | 4B (当前包序号，shard index)]
         // Modified（7.29）: 为路由器预留字段，每个包到达路由器时的ECN，队列深度，信道利用率这些信息。
         // 7.29：添加字段 | 1B ECN | 1B 队列深度 | 2B 信道利用率（CU）|
@@ -156,9 +162,9 @@ impl<T: Serialize> StreamSender<T> {
         // 使用length delimited coding进行封包，在UDP payload开始会额外预留四个字节包含当前payload长度的信息。
         // 不同流对应的流ID：上行的用户动作（0） 下行的HAPTICS对齐（1） 下行的音频（2） 下行编码的视频流（3）上行的统计数据（4）
         // 其他每个包公用的包头在这里定义
-        const OFFSET: usize = 2 + 4 + 4 + 4 + 1 + 1 + 2;
+        const OFFSET: usize = 2 + 2 + 4 + 4 + 4 + 1 + 1 + 2;
         let max_shard_data_size = self.max_packet_size - OFFSET;
-        
+
         // 初始化header_buffer，并且预留header_size的长度，最后序列化header
         // 所有的数据用rust的bincode包进行序列化，serialized_size返回序列化需要的长度
         let header_size = bincode::serialized_size(header).map_err(err!()).unwrap() as usize;
@@ -169,7 +175,6 @@ impl<T: Serialize> StreamSender<T> {
         bincode::serialize_into(&mut self.header_buffer, header)
             .map_err(err!())
             .unwrap();
-
         //计算一帧的包头和payload需要分别需要多少个包传输
         let header_shards = self.header_buffer.chunks(max_shard_data_size);
 
@@ -183,7 +188,9 @@ impl<T: Serialize> StreamSender<T> {
         );
 
         //封包并且发送到socket的缓冲区
+        // 8.6更改包类型，再复制一遍流id
         for (shard_index, shard) in header_shards.chain(payload_shards).enumerate() {
+            shards_buffer.put_u16(self.stream_id);
             shards_buffer.put_u16(self.stream_id);
             shards_buffer.put_u32(self.next_packet_index);
             shards_buffer.put_u32(total_shards_count as _);
@@ -192,7 +199,6 @@ impl<T: Serialize> StreamSender<T> {
             shards_buffer.put_u8(0x88);
             shards_buffer.put_u8(0x77);
             shards_buffer.put_u16(0x55);
-
             shards_buffer.put_slice(shard);
             self.send_buffer(shards_buffer.split()).await;
         }
@@ -218,6 +224,8 @@ pub struct ReceiverBuffer<T> {
     pub packet_loss_count: i32,
     pub skipping_loss: bool,
     pub shard_loss_rate:f64,
+    pub first_packet_receive_time:i64,
+    pub last_packet_receive_time:i64,
 }
 
 impl<T> ReceiverBuffer<T> {
@@ -229,6 +237,8 @@ impl<T> ReceiverBuffer<T> {
             packet_loss_count:0,
             skipping_loss:false,
             shard_loss_rate:0.0,
+            first_packet_receive_time:Utc::now().timestamp_micros(),
+            last_packet_receive_time:Utc::now().timestamp_micros(),
         }
     }
 
@@ -306,7 +316,10 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
 
                 let mut shard = self.receiver.recv().await.ok_or_else(enone!())?;
 
+                let stream_id = shard.get_u16();
                 let shard_packet_index = shard.get_u32();
+                //如果是这一帧第一个包，则保存这一帧第一个包到达时间。
+
                 let shards_count = shard.get_u32() as usize;
                 let shard_index = shard.get_u32() as usize;
                 // 7.29: (to be done) 需要每一帧统计一下ecn的均值，找个数据机构存一下
@@ -314,6 +327,15 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
                 let ecn_mark = shard.get_u8();
                 let queue_depth = shard.get_u8();
                 let channel_utility = shard.get_u16();
+
+                //如果是视频帧并且是第一个包，尝试解析出时间戳
+                if stream_id == VIDEO && shard_index == 0 {
+                    buffer.first_packet_receive_time = Utc::now().timestamp_micros();
+                }
+
+                if stream_id == VIDEO && shard_index + 1 == shards_count{
+                    buffer.last_packet_receive_time = Utc::now().timestamp_micros();
+                }
 
                 if shard_packet_index == current_packet_index {
                     current_packet_shards.insert(shard_index, shard);

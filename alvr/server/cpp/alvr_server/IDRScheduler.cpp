@@ -20,16 +20,16 @@ void IDRScheduler::OnPacketLoss()
 		// Waiting next insertion.
 		return;
 	}
-	if (GetTimestampUs() - m_insertIDRTime > m_minIDRFrameInterval) {
-		// Insert immediately
-		m_insertIDRTime = GetTimestampUs();
-		m_scheduled = true;
-	}
-	else {
-		// Schedule next insertion.
-		m_insertIDRTime += m_minIDRFrameInterval;
-		m_scheduled = true;
-	}
+	// if (GetTimestampUs() - m_insertIDRTime > m_minIDRFrameInterval) {
+	// 	// Insert immediately
+	// 	m_insertIDRTime = GetTimestampUs();
+	// 	m_scheduled = true;
+	// }
+	// else {
+	// 	// Schedule next insertion.
+	// 	m_insertIDRTime += m_minIDRFrameInterval;
+	// 	m_scheduled = true;
+	// }
 }
 
 void IDRScheduler::OnStreamStart()
