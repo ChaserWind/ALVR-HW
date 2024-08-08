@@ -387,13 +387,13 @@ impl StatisticsManager {
                 //看ratecontrolinput中estimate bandwidth值是不是0，现在不加不减，或者是multiple赠的时候出问题了
                 target_bitrate_bps_inrtc=(AIMD_MANGER.lock().Update(&RateControlInput_MANGER.lock(), (Utc::now().timestamp_micros() as f64 *0.001) as i64)/1024.0/1024.0).to_string();
                 // 8.5固定编码码率？？ 
-                AIMD_MANGER.lock().current_bitrate_ = 50. * 1024. * 1024.;
+                //AIMD_MANGER.lock().current_bitrate_ = 50. * 1024. * 1024.;
                 difference=AIMD_MANGER.lock().current_bitrate_-self.prev_target_bitrate_inrtc;
                 let prev_target_bitrate=self.prev_target_bitrate_inrtc;
                 self.prev_target_bitrate_inrtc=AIMD_MANGER.lock().current_bitrate_;
 
-                let mut delta=AIMD_MANGER.lock().current_bitrate_/120./8.+prev_target_bitrate/120./8.-2.*(frame.total_size_for_this_frame as f64);
-                let normalize=delta/(AIMD_MANGER.lock().current_bitrate_/120./8.);
+                let mut delta=AIMD_MANGER.lock().current_bitrate_/72./8.+prev_target_bitrate/72./8.-2.*(frame.total_size_for_this_frame as f64);
+                let normalize=delta/(AIMD_MANGER.lock().current_bitrate_/72./8.);
                 AIMD_MANGER.lock().normalize_delta=normalize;
                 self.accumulate_delta+=delta;
                 self.smooth_delta=0.9*self.smooth_delta+0.1*self.accumulate_delta;
@@ -585,7 +585,7 @@ impl StatisticsManager {
             if RateControlInput_MANGER.lock().estimated_throughput.is_some(){
                 input_thr=RateControlInput_MANGER.lock().estimated_throughput.unwrap().to_string();
             }
-            let mut delta=AIMD_MANGER.lock().current_bitrate_/120./8.-frame.total_size_for_this_frame as f64;
+            let mut delta=AIMD_MANGER.lock().current_bitrate_/72./8.-frame.total_size_for_this_frame as f64;
             let mut gradient_c=self.gradient;
             if gradient_c>0.&& delta>0.{
                 self.state=2;
@@ -594,9 +594,9 @@ impl StatisticsManager {
             }else{
                 self.state=1;
             }
-            if (frame.total_pipeline_latency.as_secs_f32() * 1000.>100.)&&!frame.save_flag{//wz repeat
-                self.state=0;
-            }
+            // if (frame.total_pipeline_latency.as_secs_f32() * 1000.>100.)&&!frame.save_flag{//wz repeat
+            //     self.state=0;
+            // }
             AIMD_MANGER.lock().flag_for_qp=self.state;
             
             let experiment_target_timestamp=Local::now().format("%Y%m%d_%H%M%S").to_string();

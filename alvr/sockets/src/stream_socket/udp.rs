@@ -1,7 +1,9 @@
 use crate::{Ldc, LOCAL_IP};
 use alvr_common::prelude::*;
+use alvr_packets::VIDEO;
 use alvr_session::SocketBufferSize;
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use chrono::Utc;
 use futures::{
     stream::{SplitSink, SplitStream},
     StreamExt,
@@ -67,6 +69,8 @@ pub async fn connect(
     ))
 }
 
+
+//8.8: 如果是视频帧，需要立刻记录包到达的时间并且添加在现在数据的一开始（i64）
 pub async fn receive_loop(
     mut socket: UdpStreamReceiveSocket,
     packet_enqueuers: Arc<Mutex<HashMap<u16, mpsc::UnboundedSender<BytesMut>>>>,
@@ -79,6 +83,13 @@ pub async fn receive_loop(
         }
 
         let stream_id = packet_bytes.get_u16();
+        if stream_id == VIDEO {
+            let current_timestamps_micros = Utc::now().timestamp_micros() as i64;
+            packet_bytes.reserve(std::mem::size_of::<i64>());
+            let tail = packet_bytes.split_to(packet_bytes.len());
+            packet_bytes.put_i64(current_timestamps_micros);
+            packet_bytes.extend_from_slice(&tail);
+        }
         if let Some(enqueuer) = packet_enqueuers.lock().await.get_mut(&stream_id) {
             enqueuer.send(packet_bytes).map_err(err!())?;
         }

@@ -775,10 +775,10 @@ impl AimdRateControl{
                     // 限制最大估计码率为ACK码率的1.5倍，避免没有限制的增加
                     // 额外增加10kbps是为了避免在低带宽时增加太慢
                     let mut increase_limit = 1.5 * estimated_throughput + 10240.0;
-                    increase_limit = std::f64::INFINITY;
+                    //increase_limit = std::f64::INFINITY;
                     if self.send_side_ && self.in_alr_ && self.no_bitrate_increase_in_alr_ {
                         increase_limit = self.current_bitrate_;
-                        increase_limit = std::f64::INFINITY;
+                        //increase_limit = std::f64::INFINITY;
                     }
 
                     if self.current_bitrate_ < increase_limit {
