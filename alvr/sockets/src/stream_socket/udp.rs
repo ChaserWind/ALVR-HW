@@ -84,11 +84,19 @@ pub async fn receive_loop(
 
         let stream_id = packet_bytes.get_u16();
         if stream_id == VIDEO {
+            
             let current_timestamps_micros = Utc::now().timestamp_micros() as i64;
             packet_bytes.reserve(std::mem::size_of::<i64>());
-            let tail = packet_bytes.split_to(packet_bytes.len());
+            let tail = packet_bytes.split_off(2);
             packet_bytes.put_i64(current_timestamps_micros);
             packet_bytes.extend_from_slice(&tail);
+
+            // 这一段是直接在包的开头添加时间戳的代码
+            // let current_timestamps_micros = Utc::now().timestamp_micros() as i64;
+            // packet_bytes.reserve(std::mem::size_of::<i64>());
+            // let tail = packet_bytes.split_to(packet_bytes.len());
+            // packet_bytes.put_i64(current_timestamps_micros);
+            // packet_bytes.extend_from_slice(&tail);
         }
         if let Some(enqueuer) = packet_enqueuers.lock().await.get_mut(&stream_id) {
             enqueuer.send(packet_bytes).map_err(err!())?;

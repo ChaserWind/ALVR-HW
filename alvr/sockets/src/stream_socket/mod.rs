@@ -317,6 +317,10 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
                 let mut shard = self.receiver.recv().await.ok_or_else(enone!())?;
 
                 let stream_id = shard.get_u16();
+                let mut current_timestamps_micros = 0;
+                if stream_id == VIDEO {
+                    current_timestamps_micros = shard.get_i64();
+                }
                 let shard_packet_index = shard.get_u32();
                 //如果是这一帧第一个包，则保存这一帧第一个包到达时间。
 
@@ -330,11 +334,11 @@ impl<T: DeserializeOwned> StreamReceiver<T> {
 
                 //如果是视频帧并且是第一个包，尝试解析出时间戳
                 if stream_id == VIDEO && shard_index == 0 {
-                    buffer.first_packet_receive_time = Utc::now().timestamp_micros();
+                    buffer.first_packet_receive_time = current_timestamps_micros;
                 }
 
                 if stream_id == VIDEO && shard_index + 1 == shards_count{
-                    buffer.last_packet_receive_time = Utc::now().timestamp_micros();
+                    buffer.last_packet_receive_time = current_timestamps_micros;
                 }
 
                 if shard_packet_index == current_packet_index {

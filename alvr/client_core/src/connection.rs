@@ -420,7 +420,7 @@ async fn stream_pipeline(
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     total_packets+=1;
-                    stats.report_video_packet_received(header.timestamp, receiver_buffer.first_packet_receive_time, receiver_buffer.last_packet_receive_time);
+                    stats.report_video_packet_received(header.timestamp, receiver_buffer.first_packet_receive_time, receiver_buffer.last_packet_receive_time, nal.len());
                 }
                 if receiver_buffer.had_packet_loss(){
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
@@ -630,18 +630,25 @@ async fn stream_pipeline(
 
     let receive_loop = async move { stream_socket.receive_loop().await };
 
+    tokio::spawn(async {
+        if let Err(e) = spawn_cancelable(receive_loop).await {
+            info!("Server disconnected. Cause: {e}");
+            set_hud_message(SERVER_DISCONNECTED_MESSAGE);
+        }
+    });
+
     // Run many tasks concurrently. Threading is managed by the runtime, for best performance.
     tokio::select! {
-        res = spawn_cancelable(receive_loop) => {
-            if let Err(e) = res {
-                info!("Server disconnected. Cause: {e}");
-            }
-            set_hud_message(
-                SERVER_DISCONNECTED_MESSAGE
-            );
+        // res = spawn_cancelable(receive_loop) => {
+        //     if let Err(e) = res {
+        //         info!("Server disconnected. Cause: {e}");
+        //     }
+        //     set_hud_message(
+        //         SERVER_DISCONNECTED_MESSAGE
+        //     );
 
-            Ok(())
-        },
+        //     Ok(())
+        // },
         res = spawn_cancelable(game_audio_loop) => res,
         res = spawn_cancelable(microphone_loop) => res,
         res = spawn_cancelable(tracking_send_loop) => res,

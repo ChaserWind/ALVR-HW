@@ -213,6 +213,7 @@ pub struct ClientStatistics {
     pub last_packet_receive_time: i64,
     pub flag_debug:i32,
     pub is_idr:bool,
+    pub bytes_count: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

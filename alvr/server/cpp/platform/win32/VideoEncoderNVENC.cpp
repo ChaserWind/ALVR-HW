@@ -236,10 +236,10 @@ void VideoEncoderNVENC::FillEncodeConfig(NV_ENC_INITIALIZE_PARAMS &initializePar
 		config.enableIntraRefresh = true;
 		
 		if (Settings::Instance().m_nvencIntraRefreshPeriod != -1) {
-			config.intraRefreshPeriod = 10;
+			config.intraRefreshPeriod = 20;
 		}
 		if (Settings::Instance().m_nvencIntraRefreshCount != -1) {
-			config.intraRefreshCnt = 10;
+			config.intraRefreshCnt = 20;
 		}
 
 		switch (Settings::Instance().m_entropyCoding) {
@@ -308,10 +308,10 @@ void VideoEncoderNVENC::FillEncodeConfig(NV_ENC_INITIALIZE_PARAMS &initializePar
 	
 	uint32_t maxFrameSize = static_cast<uint32_t>(bitrate_bps / refreshRate);
 	Debug("VideoEncoderNVENC: maxFrameSize=%d bits\n", maxFrameSize);
-	encodeConfig.rcParams.vbvBufferSize = maxFrameSize * 1.1;
-	encodeConfig.rcParams.vbvInitialDelay = maxFrameSize * 1.1;
-	encodeConfig.rcParams.maxBitRate = static_cast<uint32_t>(bitrate_bps);
-	encodeConfig.rcParams.averageBitRate = static_cast<uint32_t>(bitrate_bps);
+	//encodeConfig.rcParams.vbvBufferSize = maxFrameSize * 1.1;
+	//encodeConfig.rcParams.vbvInitialDelay = maxFrameSize * 1.1;
+	//encodeConfig.rcParams.maxBitRate = static_cast<uint32_t>(bitrate_bps);
+	//encodeConfig.rcParams.averageBitRate = static_cast<uint32_t>(bitrate_bps);
 	// if (Settings::Instance().m_nvencAdaptiveQuantizationMode == SpatialAQ) {
 	// 	encodeConfig.rcParams.enableAQ = 1;
 	// } else if (Settings::Instance().m_nvencAdaptiveQuantizationMode == TemporalAQ) {
